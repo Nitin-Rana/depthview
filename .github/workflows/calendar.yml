@@ -1,0 +1,42 @@
+name: Refresh economic calendar
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'   # every 6 hours
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch this week's calendar
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 --retry-delay 5 \
+            -H 'User-Agent: Mozilla/5.0 (depthview calendar sync)' \
+            'https://nfs.faireconomy.media/ff_calendar_thisweek.json' -o next.json
+          python3 -c "
+          import json,sys
+          d=json.load(open('next.json'))
+          assert isinstance(d,list) and len(d)>0, 'unexpected payload'
+          for e in d[:3]: assert 'title' in e and 'date' in e
+          print('ok', len(d), 'events')
+          "
+          mv next.json calendar.json
+
+      - name: Commit if changed
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet -- calendar.json; then
+            echo "no change"
+          else
+            git add calendar.json
+            git commit -m "chore: refresh economic calendar"
+            git push
+          fi

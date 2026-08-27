@@ -199,6 +199,35 @@
   .tapeRow.buy{color:#5fcf96;} .tapeRow.sell{color:#f08a8a;}
   .tapeRow.big{ background:rgba(255,255,255,.06); font-weight:700; }
 
+  /* ---------- NEWS / ECONOMIC CALENDAR ---------- */
+  #newsResize{ height:5px; background:var(--line); cursor:ns-resize; flex-shrink:0; }
+  #newsResize:hover{ background:var(--accent); }
+  #newsBar{ height:170px; background:var(--panel); border-top:1px solid var(--line2); display:flex; flex-direction:column; flex-shrink:0; overflow:hidden; }
+  #newsBar.collapsed{ height:30px; }
+  #newsHead{
+    display:flex; align-items:center; gap:12px; padding:6px 14px;
+    border-bottom:1px solid var(--line); flex-shrink:0;
+  }
+  #newsHead .ttl{ font-size:10px; letter-spacing:1px; color:var(--txt-dim2); font-weight:700; text-transform:uppercase; }
+  #newsHead .clock{ font-family:'Roboto Mono',monospace; font-size:12px; color:var(--accent2); font-weight:600; }
+  #newsHead .right{ margin-left:auto; display:flex; align-items:center; gap:10px; }
+  #newsBody{ flex:1; overflow-y:auto; }
+  #newsTable{ width:100%; border-collapse:collapse; font-size:12px; }
+  #newsTable th{
+    text-align:left; font-size:9px; letter-spacing:.8px; color:var(--txt-dim2); font-weight:700;
+    text-transform:uppercase; padding:5px 12px; position:sticky; top:0; background:var(--panel2); border-bottom:1px solid var(--line);
+  }
+  #newsTable td{ padding:5px 12px; border-bottom:1px solid rgba(255,255,255,.035); color:var(--txt2); }
+  #newsTable tr.soon td{ background:rgba(232,179,57,.09); }
+  #newsTable tr.live td{ background:rgba(61,139,253,.13); }
+  .imp{ display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:6px; }
+  .imp.High{ background:var(--red2); } .imp.Medium{ background:var(--amber); }
+  .imp.Low{ background:var(--txt-dim2); } .imp.Holiday{ background:var(--accent); }
+  .ccy{ font-family:'Roboto Mono',monospace; font-weight:700; color:var(--txt); }
+  .cd{ font-family:'Roboto Mono',monospace; color:var(--amber); font-weight:600; }
+  .tIST{ font-family:'Roboto Mono',monospace; font-weight:600; color:var(--accent2); }
+  #newsEmpty{ padding:14px; font-size:11.5px; color:var(--txt-dim2); line-height:1.6; }
+
   ::-webkit-scrollbar{width:10px; height:10px;}
   ::-webkit-scrollbar-thumb{background:var(--line2); border-radius:5px;}
   ::-webkit-scrollbar-thumb:hover{background:#3d4b5c;}
@@ -357,6 +386,30 @@
   </div>
 </div>
 
+<div id="newsResize" title="Drag to resize"></div>
+<div id="newsBar">
+  <div id="newsHead">
+    <span class="ttl">Economic Calendar</span>
+    <span class="clock" id="istClock">--:--:-- IST</span>
+    <div class="right">
+      <div class="ctl"><label>Impact</label>
+        <select id="newsImpact">
+          <option value="all">All</option>
+          <option value="High" selected>High only</option>
+          <option value="HighMedium">High + Medium</option>
+        </select>
+      </div>
+      <div class="ctl"><label>Currency</label>
+        <select id="newsCcy"><option value="all">All</option></select>
+      </div>
+      <button class="btn" id="newsCollapse">Hide</button>
+    </div>
+  </div>
+  <div id="newsBody">
+    <div id="newsEmpty">Loading calendar…</div>
+  </div>
+</div>
+
 <script>
 (() => {
 "use strict";
@@ -471,8 +524,9 @@ const state = {
   sessionHi:-Infinity, sessionLo:Infinity, sessionVol:0, sessionPV:0,
   cvd:0, cvdHistory:[], volProfile:new Map(), cvpProfile:new Map(),
   candles:[], tradeCountWindow:[], tickSize:1,
-  tick:null, decimals:null, walls:[], qRef:0,
-  fundingRate:null, markPrice:null, openInterest:null,
+  tick:null, decimals:null, walls:[], qRef:0, rawRef:0,
+  deepBids:[], deepAsks:[],
+  fundingRate:null, markPrice:null, openInterest:null, nextFunding:null,
 };
 const WALL_FACTOR = 5;   // a level this many times the median size counts as a wall
 // smoothed visible price window — this is what makes the chart fill the screen
@@ -725,6 +779,26 @@ function streamsForSymbol(s,m){
 }
 const wsHost = m => m==='futures' ? 'wss://fstream.binance.com/stream' : 'wss://stream.binance.com:9443/stream';
 
+/* Deep order book.
+   `depth20` covers only ~0.005% of price on a liquid spot pair but ~0.3% on a
+   thin futures pair, which is why spot and futures heatmaps looked nothing
+   alike. Polling a 500-level snapshot makes both span the visible range. */
+let deepPollTimer=null;
+async function pollDeepBook(seq){
+  if(seq!==connSeq) return;
+  const sym=SYMBOL.toUpperCase();
+  const base = MARKET==='futures' ? 'https://fapi.binance.com/fapi/v1/depth'
+                                  : 'https://api.binance.com/api/v3/depth';
+  try{
+    const d=await fetch(`${base}?symbol=${sym}&limit=500`).then(r=>r.json());
+    if(seq!==connSeq || !d || !d.bids) return;
+    state.deepBids=d.bids.map(([p,q])=>[+p,+q]).filter(x=>x[1]>0);
+    state.deepAsks=d.asks.map(([p,q])=>[+p,+q]).filter(x=>x[1]>0);
+    updateImbalance();
+    detectWalls();
+  }catch(e){}
+}
+
 async function pollFuturesStats(seq){
   if(seq!==connSeq||MARKET!=='futures') return;
   const sym=SYMBOL.toUpperCase();
@@ -750,7 +824,7 @@ async function pollFuturesStats(seq){
 }
 
 function connect(){
-  clearTimeout(reconnectTimer); clearInterval(futPollTimer);
+  clearTimeout(reconnectTimer); clearInterval(futPollTimer); clearInterval(deepPollTimer);
   const mySeq=++connSeq, myMarket=MARKET;
   if(ws){ ws.onopen=ws.onclose=ws.onerror=ws.onmessage=null; try{ws.close();}catch(e){} ws=null; }
   resetSession();
@@ -775,6 +849,8 @@ function connect(){
     else if(msg.stream.endsWith('@ticker')) onTicker(d);
     else if(msg.stream.endsWith('@forceOrder')) onForceOrder(d);
   };
+  pollDeepBook(mySeq);
+  deepPollTimer=setInterval(()=>pollDeepBook(mySeq),1000);
   if(myMarket==='futures'){
     pollFuturesStats(mySeq);
     futPollTimer=setInterval(()=>pollFuturesStats(mySeq),5000);
@@ -795,7 +871,8 @@ function resetSession(){
     cvd:0,cvdHistory:[],volProfile:new Map(),cvpProfile:new Map(),
     candles:[],tradeCountWindow:[],fundingRate:null,markPrice:null,openInterest:null,
     tickSize:SYMBOL_TICK[SYMBOL]||1,
-    tick:null, decimals:null, walls:[], qRef:0,
+    tick:null, decimals:null, walls:[], qRef:0, rawRef:0,
+    deepBids:[], deepAsks:[], nextFunding:null,
   });
   const wl=document.getElementById('wallList');
   if(wl) wl.innerHTML='';
@@ -845,16 +922,21 @@ function onDepth(d){
 
 /* ---- liquidity walls: resting orders far larger than the local norm ---- */
 function detectWalls(){
-  const all=[...state.bids.map(b=>b[1]), ...state.asks.map(a=>a[1])].filter(q=>q>0).sort((a,b)=>a-b);
-  if(all.length<6){ state.walls=[]; return; }
+  const B = state.deepBids.length ? state.deepBids : state.bids;
+  const A = state.deepAsks.length ? state.deepAsks : state.asks;
+  // only consider levels inside the visible price window
+  const inView = ([p]) => view.lo==null || (p>=view.lo && p<=view.hi);
+  const vb=B.filter(inView), va=A.filter(inView);
+  const all=[...vb.map(b=>b[1]), ...va.map(a=>a[1])].filter(q=>q>0).sort((a,b)=>a-b);
+  if(all.length<6){ state.walls=[]; renderWalls(); return; }
   const median=all[Math.floor(all.length/2)];
-  const thresh=Math.max(median*WALL_FACTOR, all[all.length-1]*0.25);
+  const thresh=Math.max(median*WALL_FACTOR, all[all.length-1]*0.2);
   const mid=(state.bestBid+state.bestAsk)/2;
   const walls=[];
-  state.bids.forEach(([p,q])=>{ if(q>=thresh) walls.push({price:p,qty:q,side:'bid',dist:mid?((p-mid)/mid*100):0}); });
-  state.asks.forEach(([p,q])=>{ if(q>=thresh) walls.push({price:p,qty:q,side:'ask',dist:mid?((p-mid)/mid*100):0}); });
+  vb.forEach(([p,q])=>{ if(q>=thresh) walls.push({price:p,qty:q,side:'bid',dist:mid?((p-mid)/mid*100):0}); });
+  va.forEach(([p,q])=>{ if(q>=thresh) walls.push({price:p,qty:q,side:'ask',dist:mid?((p-mid)/mid*100):0}); });
   walls.sort((a,b)=>b.qty-a.qty);
-  state.walls=walls.slice(0,12);
+  state.walls=walls.slice(0,10);
   renderWalls();
 }
 function renderWalls(){
@@ -950,7 +1032,11 @@ setInterval(()=>{
   document.getElementById('tps').textContent=state.tradeCountWindow.length;
 },500);
 function updateImbalance(){
-  const b=state.bids.reduce((a,[,q])=>a+q,0), a2=state.asks.reduce((a,[,q])=>a+q,0), tot=b+a2||1;
+  // measured across the visible window of the deep book, not just top-of-book
+  const B = state.deepBids.length ? state.deepBids : state.bids;
+  const A = state.deepAsks.length ? state.deepAsks : state.asks;
+  const inView = ([p]) => view.lo==null || (p>=view.lo && p<=view.hi);
+  const b=B.filter(inView).reduce((a,[,q])=>a+q,0), a2=A.filter(inView).reduce((a,[,q])=>a+q,0), tot=b+a2||1;
   document.getElementById('imbalBid').style.width=(100*b/tot).toFixed(1)+'%';
   document.getElementById('imbalAsk').style.width=(100*a2/tot).toFixed(1)+'%';
   document.getElementById('bidVolTxt').textContent=fmtQty(b);
@@ -1006,9 +1092,12 @@ function renderLadder(){
   const bids = state.bids.slice().sort((a,b)=>b[0]-a[0]).slice(0,LADDER_LEVELS);
   const maxQ = Math.max(...asks.map(a=>a[1]), ...bids.map(b=>b[1]), 0.0001);
   const wallSet = new Set(state.walls.map(w=>w.price));
-  // DOM heatmap uses the same reference max as the chart so the ladder and the
-  // heatmap agree on what "big" looks like
-  const ref = state.qRef>0 ? state.qRef : maxQ;
+  // The ladder shows RAW levels while the heatmap shows levels aggregated into
+  // display buckets, and that aggregation factor differs hugely per symbol.
+  // Sharing one reference made the ladder washed out on spot and saturated on
+  // futures, so the DOM heatmap keeps its own raw-level reference.
+  state.rawRef = Math.max(maxQ, state.rawRef*0.995);
+  const ref = state.rawRef>0 ? state.rawRef : maxQ;
 
   // asks render top-down = highest price first
   let cumA=0;
@@ -1131,9 +1220,14 @@ function aggregate(levels, bucket){
 function tick(){
   const now=Date.now();
   updateView();
-  if(view.lo!=null && now-lastColTime>=COL_MS && state.bids.length && state.asks.length){
+  const hb = state.deepBids.length ? state.deepBids : state.bids;
+  const ha = state.deepAsks.length ? state.deepAsks : state.asks;
+  if(view.lo!=null && now-lastColTime>=COL_MS && hb.length && ha.length){
     lastColTime=now;
-    columns.push({t:now, bids:state.bids.slice(), asks:state.asks.slice()});
+    // store only what can be visible, so deep books stay cheap to redraw
+    const lo=view.lo-(view.hi-view.lo), hi=view.hi+(view.hi-view.lo);
+    const clip=l=>l.filter(([p])=>p>=lo&&p<=hi);
+    columns.push({t:now, bids:clip(hb), asks:clip(ha)});
     while(columns.length > Math.ceil(heatCanvas.width/PX_PER_COL)+4) columns.shift();
   }
   drawHeat(); drawOverlay(); drawCvd(); drawCvp(); drawSvp(); drawVol();
@@ -1184,26 +1278,27 @@ function drawHeat(){
   if(state.walls.length){
     const px = state.markPrice||state.lastPrice||1;
     heatCtx.textBaseline='middle';
-    for(const wl of state.walls){
+    // only the strongest few get the full treatment, the rest a quiet marker,
+    // otherwise a deep book paints the whole chart in bands
+    state.walls.forEach((wl,idx)=>{
       const y=priceToY(wl.price,h);
-      if(y<0||y>h) continue;
+      if(y<0||y>h) return;
       const col = wl.side==='bid' ? '34,209,126' : '255,90,104';
-      const bh = Math.max(4*DPR, barH);
+      const major = idx<4;
+      const bh = Math.max(3*DPR, barH);
 
-      // full-width tinted band so the level is unmissable
-      heatCtx.fillStyle=`rgba(${col},.13)`;
+      heatCtx.fillStyle=`rgba(${col},${major?0.10:0.05})`;
       heatCtx.fillRect(0, y-bh/2, w, bh);
-      // bright rule across the level
-      heatCtx.strokeStyle=`rgba(${col},.95)`;
-      heatCtx.lineWidth=2*DPR;
+      heatCtx.strokeStyle=`rgba(${col},${major?0.9:0.45})`;
+      heatCtx.lineWidth=(major?2:1)*DPR;
       heatCtx.beginPath(); heatCtx.moveTo(0,y); heatCtx.lineTo(w,y); heatCtx.stroke();
-      // left-edge arrow marker
       heatCtx.fillStyle=`rgba(${col},1)`;
       heatCtx.beginPath();
-      heatCtx.moveTo(0, y-6*DPR); heatCtx.lineTo(9*DPR, y); heatCtx.lineTo(0, y+6*DPR);
+      heatCtx.moveTo(0, y-(major?6:4)*DPR); heatCtx.lineTo((major?9:6)*DPR, y);
+      heatCtx.lineTo(0, y+(major?6:4)*DPR);
       heatCtx.closePath(); heatCtx.fill();
 
-      // size + notional pill at the right, next to the ladder
+      if(!major) return;
       const txt=`${fmtQtyShort(wl.qty)}  ${fmtUsd(wl.qty*px)}`;
       heatCtx.font=`700 ${11*DPR}px 'Roboto Mono', monospace`;
       const tw=heatCtx.measureText(txt).width+14*DPR;
@@ -1212,7 +1307,7 @@ function drawHeat(){
       heatCtx.fillRect(bx, y-9*DPR, tw, 18*DPR);
       heatCtx.fillStyle='#000';
       heatCtx.fillText(txt, bx+7*DPR, y+0.5*DPR);
-    }
+    });
   }
 }
 
@@ -1429,6 +1524,129 @@ centerWrap.addEventListener('contextmenu',e=>{
   const tol=(view.hi-view.lo)*0.015;
   if(nearest&&dist<=tol) removePriceAlert(nearest.id);
 });
+
+/* ============== ECONOMIC CALENDAR (IST) ==============
+   The upstream ForexFactory feed sends no CORS headers, so a GitHub Action
+   snapshots it into calendar.json in this repo and the page reads it
+   same-origin. */
+const IST_FMT = new Intl.DateTimeFormat('en-GB',{
+  timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit', hour12:false });
+const IST_DAY = new Intl.DateTimeFormat('en-GB',{
+  timeZone:'Asia/Kolkata', weekday:'short', day:'2-digit', month:'short' });
+let calendarEvents = [];
+
+function istClockTick(){
+  const now=new Date();
+  const t=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',
+    minute:'2-digit',second:'2-digit',hour12:false}).format(now);
+  document.getElementById('istClock').textContent=t+' IST';
+}
+setInterval(istClockTick,1000); istClockTick();
+
+function fmtCountdown(ms){
+  if(ms<0) return 'now';
+  const s=Math.floor(ms/1000), d=Math.floor(s/86400), h=Math.floor(s%86400/3600),
+        m=Math.floor(s%3600/60), sec=s%60;
+  if(d>0) return `${d}d ${h}h`;
+  if(h>0) return `${h}h ${String(m).padStart(2,'0')}m`;
+  return `${m}m ${String(sec).padStart(2,'0')}s`;
+}
+
+async function loadCalendar(){
+  try{
+    const r=await fetch('./calendar.json',{cache:'no-cache'});
+    if(!r.ok) throw new Error('no file');
+    const j=await r.json();
+    const rows=Array.isArray(j) ? j : (j.events||[]);
+    calendarEvents=rows.map(e=>({
+      title:e.title, country:e.country, impact:e.impact||'Low',
+      forecast:e.forecast||'', previous:e.previous||'',
+      when:new Date(e.date)
+    })).filter(e=>!isNaN(e.when));
+    const ccys=[...new Set(calendarEvents.map(e=>e.country))].sort();
+    const sel=document.getElementById('newsCcy');
+    sel.innerHTML='<option value="all">All</option>'+ccys.map(c=>`<option value="${c}">${c}</option>`).join('');
+    renderCalendar();
+  }catch(e){
+    document.getElementById('newsBody').innerHTML=
+      '<div id="newsEmpty">Calendar data not available yet.<br>'+
+      'It is refreshed into <code>calendar.json</code> by a scheduled GitHub Action; '+
+      'the first run may not have completed.</div>';
+  }
+}
+
+function renderCalendar(){
+  const body=document.getElementById('newsBody');
+  if(!calendarEvents.length) return;
+  const impSel=document.getElementById('newsImpact').value;
+  const ccySel=document.getElementById('newsCcy').value;
+  const now=Date.now();
+  let rows=calendarEvents
+    .filter(e=> e.when.getTime() > now-30*60*1000)   // keep last 30 min as "live"
+    .filter(e=> ccySel==='all' || e.country===ccySel)
+    .filter(e=> impSel==='all' ? true
+              : impSel==='High' ? e.impact==='High'
+              : (e.impact==='High'||e.impact==='Medium'))
+    .sort((a,b)=>a.when-b.when)
+    .slice(0,60);
+
+  if(!rows.length){
+    body.innerHTML='<div id="newsEmpty">No upcoming events match this filter.</div>';
+    return;
+  }
+  let lastDay='';
+  let html='<table id="newsTable"><thead><tr>'+
+    '<th style="width:96px">IST time</th><th style="width:64px">Currency</th>'+
+    '<th>Event</th><th style="width:86px">Countdown</th>'+
+    '<th style="width:78px">Forecast</th><th style="width:78px">Previous</th></tr></thead><tbody>';
+  for(const e of rows){
+    const day=IST_DAY.format(e.when);
+    if(day!==lastDay){
+      lastDay=day;
+      html+=`<tr><td colspan="6" style="background:var(--panel2);font-weight:700;color:var(--txt-dim);font-size:10px;letter-spacing:.6px">${day}</td></tr>`;
+    }
+    const diff=e.when.getTime()-now;
+    const cls = diff<0 ? 'live' : (diff < 60*60*1000 ? 'soon' : '');
+    html+=`<tr class="${cls}">`+
+      `<td class="tIST">${IST_FMT.format(e.when)}</td>`+
+      `<td><span class="imp ${e.impact}"></span><span class="ccy">${e.country}</span></td>`+
+      `<td>${e.title.replace(/[<>]/g,'')}</td>`+
+      `<td class="cd">${fmtCountdown(diff)}</td>`+
+      `<td>${e.forecast.replace(/[<>]/g,'')}</td>`+
+      `<td style="color:var(--txt-dim)">${e.previous.replace(/[<>]/g,'')}</td>`+
+      `</tr>`;
+  }
+  body.innerHTML=html+'</tbody></table>';
+}
+document.getElementById('newsImpact').addEventListener('change',renderCalendar);
+document.getElementById('newsCcy').addEventListener('change',renderCalendar);
+setInterval(()=>{ if(calendarEvents.length) renderCalendar(); }, 30000);
+
+/* collapse + drag-resize (shrinks the chart above it) */
+const newsBar=document.getElementById('newsBar');
+document.getElementById('newsCollapse').addEventListener('click',function(){
+  const c=newsBar.classList.toggle('collapsed');
+  this.textContent=c?'Show':'Hide';
+  resizeCanvases();
+});
+(function(){
+  const handle=document.getElementById('newsResize');
+  let dragging=false;
+  handle.addEventListener('mousedown',e=>{ dragging=true; e.preventDefault(); document.body.style.userSelect='none'; });
+  window.addEventListener('mousemove',e=>{
+    if(!dragging) return;
+    const h=Math.max(30, Math.min(window.innerHeight*0.6, window.innerHeight-e.clientY));
+    newsBar.classList.remove('collapsed');
+    newsBar.style.height=h+'px';
+    resizeCanvases();
+  });
+  window.addEventListener('mouseup',()=>{
+    if(!dragging) return;
+    dragging=false; document.body.style.userSelect='';
+    resizeCanvases();
+  });
+})();
+loadCalendar();
 
 /* ============== INIT ============== */
 renderTabs();
