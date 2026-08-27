@@ -122,7 +122,8 @@
   .legLine.white{ border-top:2px solid #e6edf3; }
 
   /* ---------- CENTER ---------- */
-  #centerWrap{flex:1; position:relative; min-width:0; background:var(--chart-bg); cursor:crosshair;}
+  #centerCol{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  #centerWrap{flex:1; position:relative; min-width:0; min-height:0; background:var(--chart-bg); cursor:crosshair;}
   #heatCanvas, #overlayCanvas{position:absolute; inset:0; width:100%; height:100%; display:block;}
   #overlayCanvas{pointer-events:none;}
   #hoverPrice{ position:absolute; right:0; background:var(--accent); color:#fff; font-weight:600; font-family:'Roboto Mono',monospace; font-size:12.5px; padding:3px 7px; transform:translateY(-50%); display:none; z-index:5; }
@@ -149,8 +150,7 @@
   .canvasWrap{ flex:1; position:relative; }
   .canvasWrap canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
   #ladderCol{ width:322px; }
-  #cvpCol{ width:112px; }
-  #svpCol{ width:112px; }
+  #tapeCol{ width:308px; }
 
   /* --- DOM ladder: real table, fixed rows, always legible --- */
   #ladderHead{
@@ -187,17 +187,29 @@
   .lrow.spread .cBid, .lrow.spread .cAsk, .lrow.spread .cTot{ color:var(--txt-dim2); font-size:11px; }
   .lrow.near{ background:rgba(255,255,255,.028); }
 
-  /* ---------- BOTTOM ---------- */
-  #bottomBar{height:120px; background:var(--panel); border-top:1px solid var(--line2); display:flex; flex-shrink:0;}
-  #volCanvasWrap{flex:1; position:relative; border-right:1px solid var(--line2);}
+  /* ---------- VOLUME (under chart, same width) ---------- */
+  #volCanvasWrap{height:118px; position:relative; border-top:1px solid var(--line2); flex-shrink:0; background:var(--bg1);}
   #volCanvas{width:100%; height:100%; display:block;}
   #volLabel{ position:absolute; top:5px; left:10px; font-size:9.5px; letter-spacing:1px; color:var(--txt-dim2); font-weight:700; text-transform:uppercase; pointer-events:none; }
-  #tape{width:310px; display:flex; flex-direction:column; overflow:hidden;}
-  .tapeHead{font-size:9.5px; color:var(--txt-dim2); letter-spacing:1px; padding:6px 11px; border-bottom:1px solid var(--line); font-weight:700; text-transform:uppercase; display:flex; justify-content:space-between;}
-  #tapeList{flex:1; overflow:hidden; display:flex; flex-direction:column-reverse; font-size:12px; font-family:'Roboto Mono',monospace;}
-  .tapeRow{display:flex; justify-content:space-between; padding:2px 11px;}
+
+  /* ---------- TIME & SALES (full height column) ---------- */
+  #tapeHeadRow{
+    display:grid; grid-template-columns:1fr 1.15fr .85fr .9fr;
+    font-size:9.5px; letter-spacing:.8px; color:var(--txt-dim2); font-weight:700;
+    padding:5px 10px; border-bottom:1px solid var(--line); background:var(--panel2); text-transform:uppercase; flex-shrink:0;
+  }
+  #tapeHeadRow span{ text-align:right; }
+  #tapeHeadRow span:first-child{ text-align:left; }
+  #tapeList{flex:1; overflow:hidden; display:flex; flex-direction:column; font-size:12px; font-family:'Roboto Mono',monospace;}
+  .tapeRow{
+    display:grid; grid-template-columns:1fr 1.15fr .85fr .9fr; gap:0;
+    padding:3px 10px; border-bottom:1px solid rgba(255,255,255,.03); flex-shrink:0;
+  }
+  .tapeRow span{ text-align:right; }
+  .tapeRow span:first-child{ text-align:left; color:var(--txt-dim2); }
   .tapeRow.buy{color:#5fcf96;} .tapeRow.sell{color:#f08a8a;}
-  .tapeRow.big{ background:rgba(255,255,255,.06); font-weight:700; }
+  .tapeRow.big{ background:rgba(255,255,255,.07); font-weight:700; }
+  .tapeRow.huge{ background:rgba(232,179,57,.16); font-weight:700; }
 
   /* ---------- NEWS / ECONOMIC CALENDAR ---------- */
   #newsResize{ height:5px; background:var(--line); cursor:ns-resize; flex-shrink:0; }
@@ -353,12 +365,15 @@
     </div>
   </div>
 
-  <div id="centerWrap">
-    <canvas id="heatCanvas"></canvas>
-    <canvas id="overlayCanvas"></canvas>
-    <div id="alertLayer"></div>
-    <div id="hoverPrice" class="num"></div>
-    <div id="centerHint">Click chart to set a price alert</div>
+  <div id="centerCol">
+    <div id="centerWrap">
+      <canvas id="heatCanvas"></canvas>
+      <canvas id="overlayCanvas"></canvas>
+      <div id="alertLayer"></div>
+      <div id="hoverPrice" class="num"></div>
+      <div id="centerHint">Click chart to set a price alert</div>
+    </div>
+    <div id="volCanvasWrap"><canvas id="volCanvas"></canvas><div id="volLabel">Volume</div></div>
   </div>
 
   <div id="rightPanel">
@@ -367,22 +382,11 @@
       <div id="ladderHead"><span>Bid</span><span>Price</span><span>Ask</span><span>Total</span></div>
       <div id="ladderBody"></div>
     </div>
-    <div class="rcol" id="cvpCol">
-      <div class="colHead">CVP</div>
-      <div class="canvasWrap"><canvas id="cvpCanvas"></canvas></div>
+    <div class="rcol" id="tapeCol">
+      <div class="colHead">Time &amp; Sales</div>
+      <div id="tapeHeadRow"><span>Time</span><span>Price</span><span>Size</span><span>Value</span></div>
+      <div id="tapeList"></div>
     </div>
-    <div class="rcol" id="svpCol">
-      <div class="colHead">SVP</div>
-      <div class="canvasWrap"><canvas id="svpCanvas"></canvas></div>
-    </div>
-  </div>
-</div>
-
-<div id="bottomBar">
-  <div id="volCanvasWrap"><canvas id="volCanvas"></canvas><div id="volLabel">Volume</div></div>
-  <div id="tape">
-    <div class="tapeHead"><span>Time &amp; Sales</span><span>Time / Price / Size</span></div>
-    <div id="tapeList"></div>
   </div>
 </div>
 
@@ -681,8 +685,6 @@ const heatCanvas=document.getElementById('heatCanvas'), heatCtx=heatCanvas.getCo
 const overlayCanvas=document.getElementById('overlayCanvas'), overlayCtx=overlayCanvas.getContext('2d');
 const centerWrap=document.getElementById('centerWrap');
 const cvdCanvas=document.getElementById('cvdCanvas'), cvdCtx=cvdCanvas.getContext('2d');
-const cvpCanvas=document.getElementById('cvpCanvas'), cvpCtx=cvpCanvas.getContext('2d');
-const svpCanvas=document.getElementById('svpCanvas'), svpCtx=svpCanvas.getContext('2d');
 const volCanvas=document.getElementById('volCanvas'), volCtx=volCanvas.getContext('2d');
 
 let DPR=Math.max(1,window.devicePixelRatio||1);
@@ -695,7 +697,6 @@ function resizeCanvases(){
   DPR=Math.max(1,window.devicePixelRatio||1);
   sizeTo(heatCanvas,centerWrap); sizeTo(overlayCanvas,centerWrap);
   sizeTo(cvdCanvas,cvdCanvas.parentElement,58);
-  [cvpCanvas,svpCanvas].forEach(c=>sizeTo(c,c.parentElement));
   sizeTo(volCanvas,document.getElementById('volCanvasWrap'));
   recomputeTiming();
 }
@@ -1044,10 +1045,14 @@ function updateImbalance(){
 }
 function pushTape(price,qty,isBuy,n){
   const list=document.getElementById('tapeList'), row=document.createElement('div');
-  row.className='tapeRow '+(isBuy?'buy':'sell')+(n>=8000?' big':'');
-  row.innerHTML=`<span>${new Date().toTimeString().slice(0,8)}</span><span>${fmtPrice(price)}</span><span>${qty.toFixed(3)}</span>`;
-  list.appendChild(row);
-  while(list.children.length>60) list.removeChild(list.firstChild);
+  const th=currentThreshold();
+  row.className='tapeRow '+(isBuy?'buy':'sell')+(n>=th?' huge':(n>=th*0.35?' big':''));
+  row.innerHTML=`<span>${new Date().toTimeString().slice(0,8)}</span>`+
+    `<span>${fmtPrice(price)}</span>`+
+    `<span>${fmtQtyShort(qty)}</span>`+
+    `<span>${fmtUsd(n)}</span>`;
+  list.prepend(row);
+  while(list.children.length>200) list.removeChild(list.lastChild);
 }
 function maybeWhale(price,n,isBuy){
   notionalSamples.push(n);
@@ -1189,8 +1194,17 @@ function updateView(){
   if(view.lo==null){ view.lo=lo; view.hi=hi; }
   else { view.lo += (lo-view.lo)*0.07; view.hi += (hi-view.hi)*0.07; }
 }
-const priceToY = (p,h) => h - ((p-view.lo)/(view.hi-view.lo))*h;
-const yToPrice = (yCss,hCss) => view.lo + (1 - yCss/hCss)*(view.hi-view.lo);
+// breathing room top and bottom; the bottom pad also hosts the time axis
+const PAD_T = () => 18*DPR, PAD_B = () => 30*DPR;
+function plotH(h){ return Math.max(10, h-PAD_T()-PAD_B()); }
+function priceToY(p,h){
+  const t=(p-view.lo)/(view.hi-view.lo);
+  return PAD_T() + (1-t)*plotH(h);
+}
+function yToPrice(yCss,hCss){
+  const pt=PAD_T()/DPR, ph=Math.max(10,(hCss-(PAD_T()+PAD_B())/DPR));
+  return view.lo + (1-((yCss-pt)/ph))*(view.hi-view.lo);
+}
 
 // Real exchange tick, learned from the book (falls back to the seed value).
 function realTick(){ return state.tick || state.tickSize || 0.01; }
@@ -1205,7 +1219,7 @@ function displayTick(){
 function levelPx(h){
   const range=(view.hi-view.lo);
   if(!(range>0)) return 2;
-  return Math.max(1.5, h/(range/displayTick()));
+  return Math.max(1.5, plotH(h)/(range/displayTick()));
 }
 // collapse raw levels into display-tick buckets
 function aggregate(levels, bucket){
@@ -1230,7 +1244,7 @@ function tick(){
     columns.push({t:now, bids:clip(hb), asks:clip(ha)});
     while(columns.length > Math.ceil(heatCanvas.width/PX_PER_COL)+4) columns.shift();
   }
-  drawHeat(); drawOverlay(); drawCvd(); drawCvp(); drawSvp(); drawVol();
+  drawHeat(); drawOverlay(); drawCvd(); drawVol();
   requestAnimationFrame(tick);
 }
 
@@ -1241,7 +1255,7 @@ function drawHeat(){
   // horizontal price grid
   heatCtx.strokeStyle='rgba(255,255,255,0.035)'; heatCtx.lineWidth=1;
   for(let i=0;i<=10;i++){
-    const y=Math.round(h*i/10)+0.5;
+    const y=Math.round(PAD_T()+plotH(h)*i/10)+0.5;
     heatCtx.beginPath(); heatCtx.moveTo(0,y); heatCtx.lineTo(w,y); heatCtx.stroke();
   }
   if(!showHeat || !columns.length) return;
@@ -1385,13 +1399,37 @@ function drawOverlay(){
     overlayCtx.fillText(lbl,w-tw+8*DPR,y+4.5*DPR);
   }
 
-  // price axis — evenly spaced across the full height
+  // POC — session volume peak (previously lived in the SVP column)
+  if(state.volProfile.size){
+    const bucket=displayTick(); const binned=new Map();
+    state.volProfile.forEach((v,pp)=>{
+      const b=Math.round(pp/bucket)*bucket;
+      binned.set(b,(binned.get(b)||0)+v.buy+v.sell);
+    });
+    let pocP=null,pocV=0;
+    binned.forEach((v,pp)=>{ if(v>pocV){ pocV=v; pocP=pp; } });
+    if(pocP!=null){
+      const y=priceToY(pocP,h);
+      if(y>=0&&y<=h){
+        overlayCtx.strokeStyle='rgba(232,179,57,.9)'; overlayCtx.lineWidth=1.4*DPR;
+        overlayCtx.beginPath(); overlayCtx.moveTo(0,y); overlayCtx.lineTo(w,y); overlayCtx.stroke();
+        overlayCtx.font=`700 ${10*DPR}px 'Roboto Mono', monospace`;
+        overlayCtx.fillStyle='rgba(232,179,57,.95)';
+        overlayCtx.fillRect(4*DPR, y-8*DPR, 34*DPR, 16*DPR);
+        overlayCtx.fillStyle='#000'; overlayCtx.textBaseline='middle';
+        overlayCtx.fillText('POC', 9*DPR, y);
+        overlayCtx.textBaseline='alphabetic';
+      }
+    }
+  }
+
+  // price axis — evenly spaced across the plot area
   overlayCtx.font=`${11*DPR}px 'Roboto Mono', monospace`;
   overlayCtx.fillStyle='rgba(147,162,177,0.8)';
   for(let i=0;i<=10;i++){
-    const y=h*i/10;
+    const y=PAD_T()+plotH(h)*i/10;
     const p=view.hi-(view.hi-view.lo)*(i/10);
-    overlayCtx.fillText(fmtPrice(p),7*DPR,y+(i===0?12*DPR:-4*DPR));
+    overlayCtx.fillText(fmtPrice(p),7*DPR,y-4*DPR);
   }
   // time axis
   if(columns.length){
@@ -1403,9 +1441,9 @@ function drawOverlay(){
       if(x<40*DPR) continue;
       const d=new Date(t);
       const lbl=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
-      overlayCtx.fillText(lbl,x-24*DPR,h-6*DPR);
+      overlayCtx.fillText(lbl,x-24*DPR,h-9*DPR);
       overlayCtx.strokeStyle='rgba(255,255,255,0.045)';
-      overlayCtx.beginPath(); overlayCtx.moveTo(x,0); overlayCtx.lineTo(x,h-18*DPR); overlayCtx.stroke();
+      overlayCtx.beginPath(); overlayCtx.moveTo(x,PAD_T()); overlayCtx.lineTo(x,PAD_T()+plotH(h)); overlayCtx.stroke();
     }
   }
 }
@@ -1423,66 +1461,6 @@ function drawCvd(){
   cvdCtx.fillStyle=up?'rgba(38,167,106,.18)':'rgba(209,52,56,.18)'; cvdCtx.fill();
   cvdCtx.beginPath(); pts.forEach(([x,y],i)=>i?cvdCtx.lineTo(x,y):cvdCtx.moveTo(x,y));
   cvdCtx.strokeStyle=up?'#3fb950':'#f85149'; cvdCtx.lineWidth=1.6*DPR; cvdCtx.stroke();
-}
-
-function drawCvp(){
-  const w=cvpCanvas.width,h=cvpCanvas.height;
-  cvpCtx.clearRect(0,0,w,h);
-  if(view.lo==null||!state.cvpProfile.size) return;
-  const bucket=displayTick();
-  const binned=new Map();
-  state.cvpProfile.forEach((v,p)=>{
-    const b=Math.round(p/bucket)*bucket;
-    binned.set(b,(binned.get(b)||0)+v);
-  });
-  let maxAbs=0;
-  binned.forEach(v=>{ maxAbs=Math.max(maxAbs,Math.abs(v)); });
-  if(maxAbs<=0) return;
-  const mid=w/2, barH=Math.max(1.5, levelPx(h)*0.85);
-  cvpCtx.strokeStyle='rgba(255,255,255,0.1)';
-  cvpCtx.beginPath(); cvpCtx.moveTo(mid,0); cvpCtx.lineTo(mid,h); cvpCtx.stroke();
-  binned.forEach((v,price)=>{
-    const y=priceToY(price,h);
-    if(y<-barH||y>h+barH) return;
-    const bw=(Math.abs(v)/maxAbs)*(w/2)*0.92;
-    cvpCtx.fillStyle = v>=0?'rgba(38,167,106,0.78)':'rgba(209,52,56,0.78)';
-    cvpCtx.fillRect(v>=0?mid:mid-bw, y-barH/2, bw, barH);
-  });
-}
-
-function drawSvp(){
-  const w=svpCanvas.width,h=svpCanvas.height;
-  svpCtx.clearRect(0,0,w,h);
-  if(view.lo==null||!state.volProfile.size) return;
-  const bucket=displayTick();
-  const binned=new Map();
-  state.volProfile.forEach((v,p)=>{
-    const b=Math.round(p/bucket)*bucket;
-    const e=binned.get(b)||{buy:0,sell:0};
-    e.buy+=v.buy; e.sell+=v.sell; binned.set(b,e);
-  });
-  let maxVol=0,pocPrice=null,pocVol=0;
-  binned.forEach((v,p)=>{
-    const t=v.buy+v.sell;
-    if(t>maxVol) maxVol=t;
-    if(t>pocVol){ pocVol=t; pocPrice=p; }
-  });
-  if(maxVol<=0) return;
-  const barH=Math.max(1.5, levelPx(h)*0.85);
-  binned.forEach((v,price)=>{
-    const y=priceToY(price,h);
-    if(y<-barH||y>h+barH) return;
-    const tot=v.buy+v.sell, bw=(tot/maxVol)*w*0.92, buyW=(v.buy/tot)*bw;
-    svpCtx.fillStyle='rgba(38,167,106,0.78)'; svpCtx.fillRect(0,y-barH/2,buyW,barH);
-    svpCtx.fillStyle='rgba(209,52,56,0.72)'; svpCtx.fillRect(buyW,y-barH/2,bw-buyW,barH);
-  });
-  if(pocPrice!=null){
-    const y=priceToY(pocPrice,h);
-    if(y>=-10&&y<=h+10){
-      svpCtx.strokeStyle='rgba(210,153,34,0.95)'; svpCtx.lineWidth=1.4*DPR;
-      svpCtx.beginPath(); svpCtx.moveTo(0,y); svpCtx.lineTo(w,y); svpCtx.stroke();
-    }
-  }
 }
 
 function drawVol(){
